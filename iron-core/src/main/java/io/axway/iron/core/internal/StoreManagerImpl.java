@@ -29,6 +29,8 @@ import io.axway.iron.core.internal.utils.IntrospectionHelper;
 import io.axway.iron.error.MalformedCommandException;
 import io.axway.iron.error.UnrecoverableStoreException;
 import io.axway.iron.functional.Accessor;
+import io.axway.iron.spi.migration.IronStoreMigrationProcess;
+import io.axway.iron.spi.model.snapshot.SerializableSnapshot;
 import io.axway.iron.spi.serializer.SnapshotSerializer;
 import io.axway.iron.spi.serializer.TransactionSerializer;
 import io.axway.iron.spi.storage.SnapshotStore;
@@ -56,6 +58,8 @@ class StoreManagerImpl implements StoreManager {
     private BigInteger m_currentTxId = BigInteger.ONE.negate();
     private BigInteger m_lastSnapshotTxId = BigInteger.ONE.negate();
 
+    private long m_applicationModelVersion;
+
     private Disposable m_disposableTxFlow;
     private volatile boolean m_closed = false;
 
@@ -63,21 +67,22 @@ class StoreManagerImpl implements StoreManager {
 
     StoreManagerImpl(TransactionSerializer transactionSerializer, TransactionStore transactionStore, SnapshotSerializer snapshotSerializer,
                      SnapshotStore snapshotStore, IntrospectionHelper introspectionHelper, CommandProxyFactory commandProxyFactory,
-                     Collection<CommandDefinition<? extends Command<?>>> commandDefinitions, Map<Class<?>, EntityDefinition<?>> entityDefinitions) {
+                     Collection<CommandDefinition<? extends Command<?>>> commandDefinitions, Map<Class<?>, EntityDefinition<?>> entityDefinitions,
+                     int targetVersion, Collection<IronStoreMigrationProcess> migrationProcesses, Function<SerializableSnapshot, Long> versionDetector) {
         m_transactionStore = transactionStore;
         m_introspectionHelper = introspectionHelper;
         m_commandProxyFactory = commandProxyFactory;
         m_entityDefinitions = entityDefinitions;
         m_snapshotStore = snapshotStore;
         m_storePersistence = new StorePersistence(m_commandProxyFactory, m_transactionStore, transactionSerializer, m_snapshotStore, snapshotSerializer,
-                                                  commandDefinitions);
+                                                  commandDefinitions, this);
 
         m_storePersistence                                                           //
                 .loadStores(storeName -> {
                     StoreImpl store = createStore(storeName);
                     m_stores.put(storeName, store);
                     return store.entityStores();
-                })                                                                  //
+                }, targetVersion, migrationProcesses, versionDetector)                                                                  //
                 .ifPresent(lastTx -> {
                     m_currentTxId = lastTx;
                     m_lastSnapshotTxId = lastTx;
@@ -169,7 +174,7 @@ class StoreManagerImpl implements StoreManager {
             m_stores.asMap().forEach((storeName, store) -> {
                 store.m_readLock.lock();
                 try {
-                    m_storePersistence.persistSnapshot(tx, storeName, store.entityStores().toList());
+                    m_storePersistence.persistSnapshot(tx, storeName, store.entityStores().toList(), m_applicationModelVersion );
                 } finally {
                     store.m_readLock.unlock();
                 }
@@ -259,6 +264,7 @@ class StoreManagerImpl implements StoreManager {
         private final ReadWriteLock m_readWriteLock = new ReentrantReadWriteLock();
         private final Lock m_readLock = m_readWriteLock.readLock();
         private final Lock m_writeLock = m_readWriteLock.writeLock();
+        private long m_applicationModelVersion;
 
         private StoreImpl(String storeName, EntityStores entityStores) {
             m_storeName = storeName;
@@ -464,5 +470,13 @@ class StoreManagerImpl implements StoreManager {
         public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
             return m_commandFuture.get(timeout, unit);
         }
+    }
+
+    public long getApplicationModelVersion() {
+        return m_applicationModelVersion;
+    }
+
+    public void setApplicationModelVersion(long applicationModelVersion) {
+        m_applicationModelVersion = applicationModelVersion;
     }
 }

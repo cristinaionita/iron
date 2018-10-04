@@ -1,0 +1,57 @@
+{
+    "snapshotModelVersion": 1,
+	"applicationModelVersion":2,
+	"transactionId": 0,
+    "entities": [
+        {
+            "entityName": "io.axway.iron.sample.model.BasicPerson",
+            "relations": {},
+            "attributes": {
+			    "id": {
+                    "dataType": "java.lang.String",
+					"nullable": false
+                    
+                },
+                "name": {
+                    "dataType": "java.lang.String",
+					"nullable": false
+                    
+                },
+				"salary": {
+                    "dataType": "java.lang.Double",
+					"nullable": false
+                    
+                }
+            },
+            "uniques": [
+                [
+                    "id"
+                ]
+            ],
+            "nextId": 1,
+            "instances": [
+
+            ]
+        },
+		{
+            "entityName": "io.axway.iron.sample.model.VersionPO",
+            "relations": {},
+            "attributes": {
+			    "version": {
+                    "dataType": "java.lang.Int",
+					"nullable": false
+                    
+                }
+            },
+            "uniques": [
+                [
+                    "id"
+                ]
+            ],
+            "nextId": 1,
+            "instances": [
+
+            ]
+        }
+    ]
+}

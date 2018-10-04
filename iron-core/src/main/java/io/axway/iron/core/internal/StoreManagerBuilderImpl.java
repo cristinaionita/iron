@@ -1,6 +1,7 @@
 package io.axway.iron.core.internal;
 
 import java.util.*;
+import java.util.function.*;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import io.axway.iron.Command;
@@ -15,6 +16,8 @@ import io.axway.iron.core.internal.definition.entity.EntityDefinition;
 import io.axway.iron.core.internal.definition.entity.EntityDefinitionBuilder;
 import io.axway.iron.core.internal.utils.IntrospectionHelper;
 import io.axway.iron.core.internal.utils.proxy.ProxyConstructorFactory;
+import io.axway.iron.spi.migration.IronStoreMigrationProcess;
+import io.axway.iron.spi.model.snapshot.SerializableSnapshot;
 import io.axway.iron.spi.serializer.SnapshotSerializer;
 import io.axway.iron.spi.serializer.TransactionSerializer;
 import io.axway.iron.spi.storage.SnapshotStore;
@@ -30,6 +33,10 @@ public class StoreManagerBuilderImpl implements StoreManagerBuilder {
     private TransactionStore m_transactionStore;
     private SnapshotSerializer m_snapshotSerializer;
     private SnapshotStore m_snapshotStore;
+
+    private Function<SerializableSnapshot, Long> m_versionDetector;
+    private Collection<IronStoreMigrationProcess> m_migrationProcesses;
+    private int m_targetVersion;
 
     public StoreManagerBuilderImpl() {
     }
@@ -79,6 +86,14 @@ public class StoreManagerBuilderImpl implements StoreManagerBuilder {
     }
 
     @Override
+    public StoreManagerBuilder withMigration(int targetVersion, Collection<IronStoreMigrationProcess> processes, Function<SerializableSnapshot, Long> versionDetector) {
+        m_migrationProcesses = processes;
+        m_targetVersion = targetVersion;
+        m_versionDetector = versionDetector;
+        return this;
+    }
+
+    @Override
     public StoreManager build() {
         checkState(m_transactionSerializer != null, "Transaction serializer has not been specified");
         checkState(m_transactionStore != null, "Transaction store factory has not been specified");
@@ -99,7 +114,8 @@ public class StoreManagerBuilderImpl implements StoreManagerBuilder {
         CommandProxyFactory commandProxyFactory = new CommandProxyFactory(commandDefinitions);
 
         return new StoreManagerImpl(m_transactionSerializer, m_transactionStore, m_snapshotSerializer, m_snapshotStore,
-                                    introspectionHelper, commandProxyFactory, commandDefinitions, entityDefinitions);
+                                    introspectionHelper, commandProxyFactory, commandDefinitions, entityDefinitions,
+                                    m_targetVersion, m_migrationProcesses, m_versionDetector);
     }
 
     private Collection<CommandDefinition<? extends Command<?>>> buildCommandDefinitions(CommandDefinitionBuilder commandDefinitionBuilder) {

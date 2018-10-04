@@ -16,6 +16,8 @@ import io.axway.iron.core.internal.entity.EntityStore;
 import io.axway.iron.core.internal.entity.EntityStores;
 import io.axway.iron.error.StoreException;
 import io.axway.iron.error.UnrecoverableStoreException;
+import io.axway.iron.spi.migration.IronStoreMigrationProcess;
+import io.axway.iron.spi.migration.MigrationService;
 import io.axway.iron.spi.model.snapshot.SerializableSnapshot;
 import io.axway.iron.spi.model.transaction.SerializableCommand;
 import io.axway.iron.spi.model.transaction.SerializableTransaction;
@@ -37,25 +39,28 @@ class StorePersistence {
     private final TransactionSerializer m_transactionSerializer;
     private final SnapshotStore m_snapshotStore;
     private final SnapshotSerializer m_snapshotSerializer;
+    private final StoreManagerImpl m_storeManager;
     private final Map<String, CommandDefinition<? extends Command<?>>> m_commandDefinitions;
 
     StorePersistence(CommandProxyFactory commandProxyFactory, TransactionStore transactionStore, TransactionSerializer transactionSerializer,
-                     SnapshotStore snapshotStore, SnapshotSerializer snapshotSerializer,
-                     Collection<CommandDefinition<? extends Command<?>>> commandDefinitions) {
+                     SnapshotStore snapshotStore, SnapshotSerializer snapshotSerializer, Collection<CommandDefinition<? extends Command<?>>> commandDefinitions,
+                     StoreManagerImpl storeManager) {
         m_commandProxyFactory = commandProxyFactory;
         m_transactionStore = transactionStore;
         m_transactionSerializer = transactionSerializer;
         m_snapshotStore = snapshotStore;
         m_snapshotSerializer = snapshotSerializer;
+        m_storeManager = storeManager;
 
         ImmutableMap.Builder<String, CommandDefinition<? extends Command<?>>> commandDefinitionsBuilder = ImmutableMap.builder();
         commandDefinitions.forEach(commandDefinition -> commandDefinitionsBuilder.put(commandDefinition.getCommandClass().getName(), commandDefinition));
         m_commandDefinitions = commandDefinitionsBuilder.build();
     }
 
-    void persistSnapshot(BigInteger txId, String storeName, Collection<EntityStore<?>> entityStores) {
+    void persistSnapshot(BigInteger txId, String storeName, Collection<EntityStore<?>> entityStores, long applicationModelVersion) {
         SerializableSnapshot serializableSnapshot = new SerializableSnapshot();
         serializableSnapshot.setSnapshotModelVersion(SNAPSHOT_MODEL_VERSION);
+        serializableSnapshot.setApplicationModelVersion(applicationModelVersion);
         serializableSnapshot.setTransactionId(txId);
         serializableSnapshot.setEntities(entityStores.stream().map(EntityStore::snapshot).collect(Collectors.toList()));
 
@@ -66,7 +71,8 @@ class StorePersistence {
         }
     }
 
-    Optional<BigInteger> loadStores(Function<String, EntityStores> entityStoresByStoreName) {
+    Optional<BigInteger> loadStores(Function<String, EntityStores> entityStoresByStoreName, int targetVersion, Collection<IronStoreMigrationProcess> processes,
+                                    Function<SerializableSnapshot, Long> versionDetector) {
         Optional<BigInteger> latestSnapshotTxId;
         try {
             latestSnapshotTxId = m_snapshotStore.listSnapshots().stream().max(BigInteger::compareTo);
@@ -86,28 +92,40 @@ class StorePersistence {
                             SerializableSnapshot serializableSnapshot;
                             try (InputStream is = reader.inputStream()) {
                                 serializableSnapshot = m_snapshotSerializer.deserializeSnapshot(storeName, is);
+
+                                if (m_storeManager.getApplicationModelVersion() == 0) {
+                                    m_storeManager.setApplicationModelVersion(serializableSnapshot.getApplicationModelVersion());
+                                }
+
+                                if (m_storeManager.getApplicationModelVersion() > 0 && m_storeManager.getApplicationModelVersion() != serializableSnapshot
+                                        .getApplicationModelVersion()) {
+                                    throw new UnrecoverableStoreException("Snapshot serializable model version is not supported",
+                                                                          args -> args.add("version", m_storeManager.getApplicationModelVersion())
+                                                                                  .add("expectedVersion", SNAPSHOT_MODEL_VERSION));
+                                }
+
+                                serializableSnapshot = MigrationService.migrateSnapshot(serializableSnapshot, storeName, targetVersion, processes, versionDetector);
                             }
+
+                            SerializableSnapshot snapshot4Log = serializableSnapshot;
+
                             if (serializableSnapshot.getSnapshotModelVersion() != SNAPSHOT_MODEL_VERSION) {
                                 throw new UnrecoverableStoreException("Snapshot serializable model version is not supported",
-                                                                      args -> args.add("version", serializableSnapshot.getSnapshotModelVersion())
+                                                                      args -> args.add("version", snapshot4Log.getSnapshotModelVersion())
                                                                               .add("expectedVersion", SNAPSHOT_MODEL_VERSION));
                             }
 
                             if (!lastTx.equals(serializableSnapshot.getTransactionId())) {
                                 throw new UnrecoverableStoreException("Snapshot transaction id  mismatch with request transaction id",
-                                                                      args -> args.add("snapshotTransactionId", serializableSnapshot.getTransactionId())
+                                                                      args -> args.add("snapshotTransactionId", snapshot4Log.getTransactionId())
                                                                               .add("requestTransactionId", lastTx));
                             }
 
-                            serializableSnapshot.getEntities().forEach(serializableEntityInstances -> {
-                                String entityName = serializableEntityInstances.getEntityName();
-                                EntityStore<?> entityStore = entityStores.getEntityStore(entityName);
-                                checkArgument(entityStore != null, "Entity has not be registered in the store", args -> args.add("entityName", entityName));
+                            snapshotToStore(serializableSnapshot, entityStores);
 
-                                entityStore.recover(serializableEntityInstances);
-                            });
                         });
             } catch (Exception e) {
+                e.printStackTrace();
                 throw new UnrecoverableStoreException("Error occurred when recovering from latest snapshot", e);
             }
         });
@@ -117,6 +135,16 @@ class StorePersistence {
         }
 
         return latestSnapshotTxId;
+    }
+
+
+    private void snapshotToStore(SerializableSnapshot serializableSnapshot, EntityStores entityStores){
+        serializableSnapshot.getEntities().forEach(serializableEntityInstances -> {
+            String entityName = serializableEntityInstances.getEntityName();
+            EntityStore<?> entityStore = entityStores.getEntityStore(entityName);
+            checkArgument(entityStore != null, "Entity has not be registered in the store", args -> args.add("entityName", entityName));
+            entityStore.recover(serializableEntityInstances);
+        });
     }
 
     void persistTransaction(String storeName, String synchronizationId, List<Command<?>> commands) {
