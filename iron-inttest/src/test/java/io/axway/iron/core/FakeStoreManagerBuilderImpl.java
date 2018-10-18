@@ -1,7 +1,11 @@
 package io.axway.iron.core;
 
+import java.util.*;
+import java.util.function.*;
 import io.axway.iron.Command;
 import io.axway.iron.StoreManager;
+import io.axway.iron.spi.migration.IronStoreMigrationProcess;
+import io.axway.iron.spi.model.snapshot.SerializableSnapshot;
 import io.axway.iron.spi.serializer.SnapshotSerializer;
 import io.axway.iron.spi.serializer.TransactionSerializer;
 import io.axway.iron.spi.storage.SnapshotStore;
@@ -51,6 +55,12 @@ public class FakeStoreManagerBuilderImpl implements StoreManagerBuilder {
         checkState(m_snapshotStore == null, "Snapshot store has been already set");
         m_snapshotStore = snapshotStore;
         return this;
+    }
+
+    @Override
+    public StoreManagerBuilder withMigration(int desiredVersion, Collection<IronStoreMigrationProcess> processes,
+                                             Function<SerializableSnapshot, Long> versionDetector) {
+        return null;  // TODO implement method
     }
 
     @Override
