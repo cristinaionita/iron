@@ -32,7 +32,7 @@ public interface StoreManagerBuilder {
 
     StoreManagerBuilder withSnapshotStore(SnapshotStore snapshotStore);
 
-    StoreManagerBuilder withPostProcessor(BiFunction<SerializableSnapshot, String, SerializableSnapshot> postProcessor);
+    StoreManagerBuilder withPostProcessor(BiFunction<SerializableSnapshot, String, SerializableSnapshot> snapshotPostProcessor);
 
     StoreManager build();
 }

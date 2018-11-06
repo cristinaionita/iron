@@ -16,7 +16,7 @@ public class FakeStoreManagerBuilderImpl implements StoreManagerBuilder {
     public TransactionStore m_transactionStore;
     public SnapshotSerializer m_snapshotSerializer;
     public SnapshotStore m_snapshotStore;
-    public BiFunction<SerializableSnapshot, String, SerializableSnapshot> m_postProcessor;
+    public BiFunction<SerializableSnapshot, String, SerializableSnapshot> m_snapshotPostProcessor;
 
     @Override
     public StoreManagerBuilder withEntityClass(Class<?> entityClass) {
@@ -57,9 +57,9 @@ public class FakeStoreManagerBuilderImpl implements StoreManagerBuilder {
     }
 
     @Override
-    public StoreManagerBuilder withPostProcessor(BiFunction<SerializableSnapshot, String, SerializableSnapshot> postProcessor) {
-        checkState(m_snapshotStore == null, "Snapshot store has been already set");
-        m_postProcessor = postProcessor;
+    public StoreManagerBuilder withPostProcessor(BiFunction<SerializableSnapshot, String, SerializableSnapshot> snapshotPostProcessor) {
+        checkState(m_snapshotPostProcessor == null, "Snapshot post processor function has been already set");
+        m_snapshotPostProcessor = snapshotPostProcessor;
         return this;
     }
 

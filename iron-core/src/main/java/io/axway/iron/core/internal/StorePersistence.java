@@ -41,8 +41,8 @@ class StorePersistence {
     private final Map<String, CommandDefinition<? extends Command<?>>> m_commandDefinitions;
 
     StorePersistence(CommandProxyFactory commandProxyFactory, TransactionStore transactionStore, TransactionSerializer transactionSerializer,
-                     SnapshotStore snapshotStore, SnapshotSerializer snapshotSerializer,
-                     Collection<CommandDefinition<? extends Command<?>>> commandDefinitions, StoreManagerImpl storeManager) {
+                     SnapshotStore snapshotStore, SnapshotSerializer snapshotSerializer, Collection<CommandDefinition<? extends Command<?>>> commandDefinitions,
+                     StoreManagerImpl storeManager) {
         m_commandProxyFactory = commandProxyFactory;
         m_transactionStore = transactionStore;
         m_transactionSerializer = transactionSerializer;
@@ -74,7 +74,8 @@ class StorePersistence {
      * @param entityStoresByStoreName the map store name to entity stores
      * @return latestSnapshotTxId the transaction id of the last snapshot
      */
-    Optional<BigInteger> loadStores(Function<String, EntityStores> entityStoresByStoreName, BiFunction<SerializableSnapshot, String, SerializableSnapshot> snapshotPostProcessor) {
+    Optional<BigInteger> loadStores(Function<String, EntityStores> entityStoresByStoreName,
+                                    BiFunction<SerializableSnapshot, String, SerializableSnapshot> snapshotPostProcessor) {
         Optional<BigInteger> latestSnapshotTxId;
         try {
             latestSnapshotTxId = m_snapshotStore.listSnapshots().stream().max(BigInteger::compareTo);
@@ -99,8 +100,8 @@ class StorePersistence {
                             if (m_storeManager.getApplicationModelVersion() == 0) {
                                 m_storeManager.setApplicationModelVersion(serializableSnapshot.getApplicationModelVersion());
                             }
-                            if (m_storeManager.getApplicationModelVersion() > 0 && m_storeManager.getApplicationModelVersion() != serializableSnapshot
-                                    .getApplicationModelVersion()) {
+                            if (m_storeManager.getApplicationModelVersion() > 0 &&
+                                    m_storeManager.getApplicationModelVersion() != serializableSnapshot.getApplicationModelVersion()) {
                                 throw new UnrecoverableStoreException("Snapshot serializable model version is not supported",
                                                                       args -> args.add("version", m_storeManager.getApplicationModelVersion())
                                                                               .add("expectedVersion", SNAPSHOT_MODEL_VERSION));

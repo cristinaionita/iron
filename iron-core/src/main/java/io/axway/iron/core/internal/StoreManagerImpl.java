@@ -40,7 +40,7 @@ import io.reactivex.disposables.Disposable;
 import io.reactivex.flowables.ConnectableFlowable;
 
 import static io.axway.alf.assertion.Assertion.*;
-import static java.util.Collections.emptyList;
+import static java.util.Collections.*;
 import static java.util.concurrent.TimeUnit.*;
 
 class StoreManagerImpl implements StoreManager {
@@ -66,9 +66,9 @@ class StoreManagerImpl implements StoreManager {
     private long m_applicationModelVersion;
 
     StoreManagerImpl(TransactionSerializer transactionSerializer, TransactionStore transactionStore, SnapshotSerializer snapshotSerializer,
-                     SnapshotStore snapshotStore, IntrospectionHelper introspectionHelper, CommandProxyFactory commandProxyFactory,
-                     Collection<CommandDefinition<? extends Command<?>>> commandDefinitions, Map<Class<?>, EntityDefinition<?>> entityDefinitions,
-                     BiFunction<SerializableSnapshot, String, SerializableSnapshot> postprocessor) {
+                     SnapshotStore snapshotStore, BiFunction<SerializableSnapshot, String, SerializableSnapshot> snapshotPostProcessor,
+                     IntrospectionHelper introspectionHelper, CommandProxyFactory commandProxyFactory,
+                     Collection<CommandDefinition<? extends Command<?>>> commandDefinitions, Map<Class<?>, EntityDefinition<?>> entityDefinitions) {
         m_transactionStore = transactionStore;
         m_introspectionHelper = introspectionHelper;
         m_commandProxyFactory = commandProxyFactory;
@@ -82,7 +82,7 @@ class StoreManagerImpl implements StoreManager {
                     StoreImpl store = createStore(storeName);
                     m_stores.put(storeName, store);
                     return store.entityStores();
-                }, postprocessor)                                                                  //
+                }, snapshotPostProcessor)                                                                  //
                 .ifPresent(lastTx -> {
                     m_currentTxId = lastTx;
                     m_lastSnapshotTxId = lastTx;
@@ -146,7 +146,7 @@ class StoreManagerImpl implements StoreManager {
                 LOG.error("Transaction was already processed and will be ignored",
                           args -> args.add("transactionId", txId).add("latestProcessedTransactionId", m_currentTxId));
                 if (transactionFuture != null) {
-                   transactionFuture.complete(emptyList()); // do not block anyway
+                    transactionFuture.complete(emptyList()); // do not block anyway
                 }
             }
         }, error -> {
