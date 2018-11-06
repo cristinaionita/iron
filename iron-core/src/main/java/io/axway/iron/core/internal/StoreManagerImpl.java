@@ -29,6 +29,7 @@ import io.axway.iron.core.internal.utils.IntrospectionHelper;
 import io.axway.iron.error.MalformedCommandException;
 import io.axway.iron.error.UnrecoverableStoreException;
 import io.axway.iron.functional.Accessor;
+import io.axway.iron.spi.model.snapshot.SerializableSnapshot;
 import io.axway.iron.spi.serializer.SnapshotSerializer;
 import io.axway.iron.spi.serializer.TransactionSerializer;
 import io.axway.iron.spi.storage.SnapshotStore;
@@ -62,23 +63,26 @@ class StoreManagerImpl implements StoreManager {
 
     private final Cache<String, StoreImpl> m_stores = CacheBuilder.newBuilder().build();
 
+    private long m_applicationModelVersion;
+
     StoreManagerImpl(TransactionSerializer transactionSerializer, TransactionStore transactionStore, SnapshotSerializer snapshotSerializer,
                      SnapshotStore snapshotStore, IntrospectionHelper introspectionHelper, CommandProxyFactory commandProxyFactory,
-                     Collection<CommandDefinition<? extends Command<?>>> commandDefinitions, Map<Class<?>, EntityDefinition<?>> entityDefinitions) {
+                     Collection<CommandDefinition<? extends Command<?>>> commandDefinitions, Map<Class<?>, EntityDefinition<?>> entityDefinitions,
+                     BiFunction<SerializableSnapshot, String, SerializableSnapshot> postprocessor) {
         m_transactionStore = transactionStore;
         m_introspectionHelper = introspectionHelper;
         m_commandProxyFactory = commandProxyFactory;
         m_entityDefinitions = entityDefinitions;
         m_snapshotStore = snapshotStore;
         m_storePersistence = new StorePersistence(m_commandProxyFactory, m_transactionStore, transactionSerializer, m_snapshotStore, snapshotSerializer,
-                                                  commandDefinitions);
+                                                  commandDefinitions, this);
 
         m_storePersistence                                                           //
                 .loadStores(storeName -> {
                     StoreImpl store = createStore(storeName);
                     m_stores.put(storeName, store);
                     return store.entityStores();
-                })                                                                  //
+                }, postprocessor)                                                                  //
                 .ifPresent(lastTx -> {
                     m_currentTxId = lastTx;
                     m_lastSnapshotTxId = lastTx;
@@ -469,5 +473,13 @@ class StoreManagerImpl implements StoreManager {
         public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
             return m_commandFuture.get(timeout, unit);
         }
+    }
+
+    public long getApplicationModelVersion() {
+        return m_applicationModelVersion;
+    }
+
+    public void setApplicationModelVersion(long applicationModelVersion) {
+        m_applicationModelVersion = applicationModelVersion;
     }
 }

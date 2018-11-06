@@ -37,11 +37,12 @@ class StorePersistence {
     private final TransactionSerializer m_transactionSerializer;
     private final SnapshotStore m_snapshotStore;
     private final SnapshotSerializer m_snapshotSerializer;
+    private final StoreManagerImpl m_storeManager;
     private final Map<String, CommandDefinition<? extends Command<?>>> m_commandDefinitions;
 
     StorePersistence(CommandProxyFactory commandProxyFactory, TransactionStore transactionStore, TransactionSerializer transactionSerializer,
                      SnapshotStore snapshotStore, SnapshotSerializer snapshotSerializer,
-                     Collection<CommandDefinition<? extends Command<?>>> commandDefinitions) {
+                     Collection<CommandDefinition<? extends Command<?>>> commandDefinitions, StoreManagerImpl storeManager) {
         m_commandProxyFactory = commandProxyFactory;
         m_transactionStore = transactionStore;
         m_transactionSerializer = transactionSerializer;
@@ -51,6 +52,7 @@ class StorePersistence {
         ImmutableMap.Builder<String, CommandDefinition<? extends Command<?>>> commandDefinitionsBuilder = ImmutableMap.builder();
         commandDefinitions.forEach(commandDefinition -> commandDefinitionsBuilder.put(commandDefinition.getCommandClass().getName(), commandDefinition));
         m_commandDefinitions = commandDefinitionsBuilder.build();
+        m_storeManager = storeManager;
     }
 
     void persistSnapshot(BigInteger txId, String storeName, Collection<EntityStore<?>> entityStores) {
@@ -72,7 +74,7 @@ class StorePersistence {
      * @param entityStoresByStoreName the map store name to entity stores
      * @return latestSnapshotTxId the transaction id of the last snapshot
      */
-    Optional<BigInteger> loadStores(Function<String, EntityStores> entityStoresByStoreName) {
+    Optional<BigInteger> loadStores(Function<String, EntityStores> entityStoresByStoreName, BiFunction<SerializableSnapshot, String, SerializableSnapshot> snapshotPostProcessor) {
         Optional<BigInteger> latestSnapshotTxId;
         try {
             latestSnapshotTxId = m_snapshotStore.listSnapshots().stream().max(BigInteger::compareTo);
@@ -93,6 +95,17 @@ class StorePersistence {
                             try (InputStream is = reader.inputStream()) {
                                 serializableSnapshot = m_snapshotSerializer.deserializeSnapshot(storeName, is);
                             }
+
+                            if (m_storeManager.getApplicationModelVersion() == 0) {
+                                m_storeManager.setApplicationModelVersion(serializableSnapshot.getApplicationModelVersion());
+                            }
+                            if (m_storeManager.getApplicationModelVersion() > 0 && m_storeManager.getApplicationModelVersion() != serializableSnapshot
+                                    .getApplicationModelVersion()) {
+                                throw new UnrecoverableStoreException("Snapshot serializable model version is not supported",
+                                                                      args -> args.add("version", m_storeManager.getApplicationModelVersion())
+                                                                              .add("expectedVersion", SNAPSHOT_MODEL_VERSION));
+                            }
+
                             if (serializableSnapshot.getSnapshotModelVersion() != SNAPSHOT_MODEL_VERSION) {
                                 throw new UnrecoverableStoreException("Snapshot serializable model version is not supported",
                                                                       args -> args.add("version", serializableSnapshot.getSnapshotModelVersion())
@@ -105,7 +118,9 @@ class StorePersistence {
                                                                               .add("requestTransactionId", lastTx));
                             }
 
-                            serializableSnapshot.getEntities().forEach(serializableEntityInstances -> {
+                            SerializableSnapshot postProcessedSerializableSnapshot = snapshotPostProcessor.apply(serializableSnapshot, storeName);
+
+                            postProcessedSerializableSnapshot.getEntities().forEach(serializableEntityInstances -> {
                                 String entityName = serializableEntityInstances.getEntityName();
                                 EntityStore<?> entityStore = entityStores.getEntityStore(entityName);
                                 checkArgument(entityStore != null, "Entity has not be registered in the store", args -> args.add("entityName", entityName));
