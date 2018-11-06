@@ -1,6 +1,7 @@
 package io.axway.iron.core.internal;
 
 import java.util.*;
+import java.util.function.*;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import io.axway.iron.Command;
@@ -15,6 +16,7 @@ import io.axway.iron.core.internal.definition.entity.EntityDefinition;
 import io.axway.iron.core.internal.definition.entity.EntityDefinitionBuilder;
 import io.axway.iron.core.internal.utils.IntrospectionHelper;
 import io.axway.iron.core.internal.utils.proxy.ProxyConstructorFactory;
+import io.axway.iron.spi.model.snapshot.SerializableSnapshot;
 import io.axway.iron.spi.serializer.SnapshotSerializer;
 import io.axway.iron.spi.serializer.TransactionSerializer;
 import io.axway.iron.spi.storage.SnapshotStore;
@@ -30,6 +32,7 @@ public class StoreManagerBuilderImpl implements StoreManagerBuilder {
     private TransactionStore m_transactionStore;
     private SnapshotSerializer m_snapshotSerializer;
     private SnapshotStore m_snapshotStore;
+    BiFunction<SerializableSnapshot, String, SerializableSnapshot> m_snapshotPostProcessor;
 
     public StoreManagerBuilderImpl() {
     }
@@ -72,6 +75,13 @@ public class StoreManagerBuilderImpl implements StoreManagerBuilder {
     }
 
     @Override
+    public StoreManagerBuilder withPostProcessor(BiFunction<SerializableSnapshot, String, SerializableSnapshot> snapshotPostProcessor) {
+        checkState(m_snapshotPostProcessor == null, "Snapshot post processor function has been already set");
+        m_snapshotPostProcessor = snapshotPostProcessor;
+        return this;
+    }
+
+    @Override
     public StoreManagerBuilder withSnapshotStore(SnapshotStore snapshotStore) {
         checkState(m_snapshotStore == null, "Snapshot store has been already set");
         m_snapshotStore = snapshotStore;
@@ -98,7 +108,7 @@ public class StoreManagerBuilderImpl implements StoreManagerBuilder {
 
         CommandProxyFactory commandProxyFactory = new CommandProxyFactory(commandDefinitions);
 
-        return new StoreManagerImpl(m_transactionSerializer, m_transactionStore, m_snapshotSerializer, m_snapshotStore,
+        return new StoreManagerImpl(m_transactionSerializer, m_transactionStore, m_snapshotSerializer, m_snapshotStore, m_snapshotPostProcessor,
                                     introspectionHelper, commandProxyFactory, commandDefinitions, entityDefinitions);
     }
 
